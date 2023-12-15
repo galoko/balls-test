@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Orbiting Balls with Gravity</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: black; }
+        canvas { width: 100%; height: 100% }
+    </style>
+</head>
+<body>
+    <canvas id="myCanvas"></canvas>
+    <script>
+        const m = 2**32,
+            a = 1664525,
+            c = 1013904223;
+        let z = 0xDEADBEAF;
+        function rand() {
+            z = (a * z + c) % m;
+            return z / m;
+        };
+
+        const canvas = document.getElementById('myCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Ensure canvas is DPR aware and fullscreen
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Constants
+        const GRAVITY = 9.81;
+        const DT = 1 / 60;
+        const NUM_BALLS = 1000;
+        const MAX_RADIUS = 5;
+
+        // Ball properties: x, y, z, vx, vy, vz, radius
+        const balls = new Float32Array(NUM_BALLS * 7);
+
+        // Initialize balls
+        for (let i = 0; i < balls.length; i += 7) {
+            balls[i] = (rand() * canvas.width * 2 - canvas.width); 
+            balls[i + 1] = (rand() * canvas.width * 2 - canvas.width);
+            balls[i + 2] = (rand() * canvas.width * 2 - canvas.width); 
+
+            balls[i + 3] = rand() * 100 - 50;     // vx
+            balls[i + 4] = rand() * 100 - 50;     // vy
+            balls[i + 5] = rand() * 100 - 50;     // vz
+            balls[i + 6] = MAX_RADIUS; // radius
+        }
+
+        function lerp(t, v0, v1) {
+            return v0 * (1 - t) + v1 * t
+        }
+
+        function updatePhysics() {
+            // Apply repulsion
+            const REPULSION_CONST = 10000; // Constant for repulsion force
+            const REPULSION_THRESH = 50; // Distance threshold for repulsion
+            for (let i = 0; i < balls.length; i += 7) {
+                for (let j = i + 7; j < balls.length; j += 7) {
+                    let dx = balls[i] - balls[j];
+                    let dy = balls[i + 1] - balls[j + 1];
+                    let dz = balls[i + 2] - balls[j + 2];
+                    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                    if (dist < REPULSION_THRESH && dist > 0) {
+                        let forceMagnitude = REPULSION_CONST / dist;
+
+                        // Normalize the distance vector, then multiply by force magnitude
+                        dx /= dist;
+                        dy /= dist;
+                        dz /= dist;
+
+                        balls[i + 3] += dx * forceMagnitude * DT;
+                        balls[i + 4] += dy * forceMagnitude * DT;
+                        balls[i + 5] += dz * forceMagnitude * DT;
+
+                        balls[j + 3] -= dx * forceMagnitude * DT;
+                        balls[j + 4] -= dy * forceMagnitude * DT;
+                        balls[j + 5] -= dz * forceMagnitude * DT;
+                    }
+                }
+            }
+
+            for (let i = 0; i < balls.length; i += 7) {
+                let x = balls[i];
+                let y = balls[i + 1];
+                let z = balls[i + 2];
+
+                // Calculate distance from the center
+                const dist = Math.sqrt(x * x + y * y + z * z) ** 0.8;
+
+                // Gravitational force magnitude
+                let forceMagnitude = 50
+
+                // forceMagnitude = lerp(Math.min(Math.max(0, 100 / dist), 1), forceMagnitude, 0)
+
+                // Calculate force components
+                const fx = (x / dist) * forceMagnitude;
+                const fy = (y / dist) * forceMagnitude;
+                const fz = (z / dist) * forceMagnitude;
+
+                // Update velocities based on force
+                balls[i + 3] -= fx * DT;
+                balls[i + 4] -= fy * DT;
+                balls[i + 5] -= fz * DT;
+
+                let vx = balls[i + 3];
+                let vy = balls[i + 4];
+                let vz = balls[i + 5];
+                const MAX_SPEED = 350
+                const speed = Math.hypot(vx, vy, vz)
+                if (speed > MAX_SPEED) {
+                    balls[i + 3] /= speed / MAX_SPEED;
+                    balls[i + 4] /= speed / MAX_SPEED;
+                    balls[i + 5] /= speed / MAX_SPEED;   
+                }
+
+                // Update positions
+                balls[i] += balls[i + 3] * DT; // x
+                balls[i + 1] += balls[i + 4] * DT; // y
+                balls[i + 2] += balls[i + 5] * DT; // z
+
+                {
+                    let x = balls[i];
+                    let y = balls[i + 1];
+                    let z = balls[i + 2];
+
+                    // Calculate distance from the center
+                    const dist = Math.sqrt(x * x + y * y + z * z);
+                    const MIN_DIST = 500
+                    if (dist < MIN_DIST) {
+                        balls[i] = x / dist * MIN_DIST
+                        balls[i + 1] = y / dist * MIN_DIST
+                        balls[i + 2] = z / dist * MIN_DIST
+                    }
+                }
+            }
+        }
+
+        // Render the scene
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.globalAlpha = 1
+            for (let i = 0; i < balls.length; i += 7) {
+                let scale = 1 - (balls[i + 2] / canvas.width);
+                let radius = balls[i + 6] * scale;
+
+                ctx.beginPath();
+                ctx.arc(balls[i] + canvas.width / 2, balls[i + 1] + canvas.height / 2, Math.abs(radius), 0, 2 * Math.PI);
+                ctx.fillStyle = `hsl(${i / 10}, 100%, 50%)`; // Color based on z
+                ctx.fill();
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            updatePhysics();
+            render();
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
